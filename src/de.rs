@@ -1,7 +1,18 @@
 use crate::wrap::{Wrap, WrapVariant};
-use crate::{Chain, Error, Track};
+use crate::{Chain, Error, Path, Segment, Track};
 use serde::de::{self, Deserialize, DeserializeSeed, Visitor};
 use std::fmt;
+use std::sync::{LazyLock, Mutex};
+
+pub static LAST: LazyLock<Mutex<Vec<Segment>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn most_segments<'a>(seg1: &'a Vec<Segment>, seg2: &'a Vec<Segment>) -> &'a Vec<Segment> {
+    if seg1.len() > seg2.len() {
+        seg1
+    } else {
+        seg2
+    }
+}
 
 /// Entry point. See [crate documentation][crate] for an example.
 pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, Error<D::Error>>
@@ -12,10 +23,20 @@ where
     let mut track = Track::new();
     match T::deserialize(Deserializer::new(deserializer, &mut track)) {
         Ok(t) => Ok(t),
-        Err(err) => Err(Error {
-            path: track.path(),
-            original: err,
-        }),
+        Err(err) => {
+            let tp = track.path();
+            let lp = {
+                let guard = LAST.lock().unwrap();
+                guard.clone()
+            };
+            let ms = most_segments(&tp.segments, &lp);
+            Err(Error {
+                path: Path {
+                    segments: ms.to_vec(),
+                },
+                original: err,
+            })
+        }
     }
 }
 
@@ -95,6 +116,11 @@ where
     {
         let chain = self.chain;
         let track = self.track;
+        {
+            let mut value = LAST.lock().unwrap();
+            *value = Path::from_chain(&chain).segments;
+        }
+
         self.de
             .deserialize_any(Wrap::new(visitor, &chain, track))
             .map_err(|err| track.trigger(&chain, err))

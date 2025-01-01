@@ -10,7 +10,7 @@ use super::Chain;
 /// individual segments of the path.
 #[derive(Clone, Debug)]
 pub struct Path {
-    segments: Vec<Segment>,
+    pub segments: Vec<Segment>,
 }
 
 /// Single segment of a path.
